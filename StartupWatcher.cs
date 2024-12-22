@@ -22,8 +22,8 @@ namespace NakimeWindowsService
     {
         class StartupEntry
         {
-            public string startTime { get; set; }
-            public string endTime { get; set; }
+            public string StartTime { get; set; }
+            public string EndTime { get; set; }
         }
 
         private List<StartupEntry> entries = new List<StartupEntry>();
@@ -75,8 +75,8 @@ namespace NakimeWindowsService
             var downTime = DateToStartUpEntry(DateTime.Now);
             // Let's now save the new record by appending it to the previous set of records for Today
             entries.Add(new StartupEntry() {
-                startTime = upTime,
-                endTime = downTime,
+                StartTime = upTime,
+                EndTime = downTime,
             });
             // [StartupEntry] contains field types as string
             // so as to omit the need to create a data adapter for DateTime serialization and deserialization.
