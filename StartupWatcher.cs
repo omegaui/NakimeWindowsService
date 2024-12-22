@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices.ComTypes;
 using System.ServiceProcess;
 using System.Text.Json;
 
@@ -27,8 +28,8 @@ namespace NakimeWindowsService
         }
 
         private List<StartupEntry> entries = new List<StartupEntry>();
-        private FileStream stream;
         private readonly DateTime startTime;
+        private string todaysRecordPath;
 
         public StartupWatcher()
         {
@@ -53,18 +54,15 @@ namespace NakimeWindowsService
             }
 
             // The path to Today's record file
-            string path = parentDirPath + "\\" + todaysFileStamp + ".json";
-            if (File.Exists(path))
+            todaysRecordPath = parentDirPath + "\\" + todaysFileStamp + ".json";
+            if (File.Exists(todaysRecordPath))
             {
                 // If record already exists,
-                // then, we fetch the existing records
-                // as the [OnStop] function will overrite the file, which will cause data loss.
-                var data = File.ReadAllText(path);
+                // then, we fetch the existing records as the [OnStop] function will overrite the file,
+                // which will cause data loss.
+                var data = File.ReadAllText(todaysRecordPath);
                 entries = JsonSerializer.Deserialize<List<StartupEntry>>(data);
             }
-            // Whether Today's record exists or not,
-            // We are going to create one.
-            stream = File.Create(path);
         }
 
         protected override void OnStop()
@@ -74,12 +72,15 @@ namespace NakimeWindowsService
             // Get down time in format "hh:mm:ss" (shutdown time)
             var downTime = DateToStartUpEntry(DateTime.Now);
             // Let's now save the new record by appending it to the previous set of records for Today
+            // [StartupEntry] contains field types as string, so as to omit the need to create a data
+            // adapter for DateTime serialization and deserialization.
             entries.Add(new StartupEntry() {
                 StartTime = upTime,
                 EndTime = downTime,
             });
-            // [StartupEntry] contains field types as string
-            // so as to omit the need to create a data adapter for DateTime serialization and deserialization.
+            // Whether Today's record exists or not,
+            // We are going to create one.
+            FileStream stream = File.Create(todaysRecordPath);
             JsonSerializer.Serialize(stream, entries);
             // When done, first we flush the new data
             stream.Flush();
