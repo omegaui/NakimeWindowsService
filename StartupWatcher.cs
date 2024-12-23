@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices.ComTypes;
 using System.ServiceProcess;
 using System.Text.Json;
@@ -63,10 +64,32 @@ namespace NakimeWindowsService
                 var data = File.ReadAllText(todaysRecordPath);
                 entries = JsonSerializer.Deserialize<List<StartupEntry>>(data);
             }
+            // Get up time in format "hh:mm:ss" (startup time)
+            var upTime = DateToStartUpEntry(startTime);
+            // Set down time to empty
+            var downTime = "";
+            // Let's now save the new record by appending it to the previous set of records for Today
+            // [StartupEntry] contains field types as string, so as to omit the need to create a data
+            // adapter for DateTime serialization and deserialization.
+            entries.Add(new StartupEntry()
+            {
+                StartTime = upTime,
+                EndTime = downTime,
+            });
+            // Whether Today's record exists or not,
+            // We are going to create one.
+            FileStream stream = File.Create(todaysRecordPath);
+            JsonSerializer.Serialize(stream, entries);
+            // When done, first we flush the new data
+            stream.Flush();
+            // and lastly, close the file stream and terminate the service.
+            stream.Close();
         }
 
         protected override void OnStop()
         {
+            // Remove previous partial entry
+            entries.Remove(entries.Last());
             // Get up time in format "hh:mm:ss" (startup time)
             var upTime = DateToStartUpEntry(startTime);
             // Get down time in format "hh:mm:ss" (shutdown time)
