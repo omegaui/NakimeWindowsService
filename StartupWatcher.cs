@@ -86,7 +86,7 @@ namespace NakimeWindowsService
                 previousSessions = File.ReadAllText(sessionStartDateFile) + "\n";
             }
             previousSessions += timeline;
-            File.WriteAllText(sessionStartDateFile, previousSessions)
+            File.WriteAllText(sessionStartDateFile, previousSessions);
         }
 
         // Converts [date] object into "dd/mm/yyyy" format
