@@ -6,31 +6,28 @@ using System.Runtime.InteropServices.ComTypes;
 using System.ServiceProcess;
 using System.Text.Json;
 
-/// Nakime's namespace
-/// [StartupWatcher] service doesn't actually watches the system
-/// This is a simple system managed service that reads and write system startup records,
-/// i.e. When windows boots up, this service is also started, at this time, 
-/// [OnStart] method is called which captures the exact time this service started,
-/// which is roughly the exact time when user boots up Windows.
-/// And when, Windows is shutting down, [onStop] functions writes the entry to a file
-/// named as [current-date].json at C:\Users\Default\AppData\Local\Nakime.
-/// This way we keep the record of every system startup and shutdown times.
-/// Using this data, the frontend of the Service i.e. the actual Nakime App
-/// can show various metrics to the user such as how many times the system was opened in a day,
-/// the overall uptime in hours, etc.
+/// Scenarios to Handle:
+/// 1. System is turned on and off on the same day.
+/// 2. System is turned on and off on different days.
+/// 3. System is turned on and is alive yet.
 namespace NakimeWindowsService
 {
     public partial class StartupWatcher : ServiceBase
     {
-        class StartupEntry
+        class Timeline
         {
-            public string StartTime { get; set; }
-            public string EndTime { get; set; }
+            public string Start { get; set; }
+            public string End { get; set; }
+
+            public override string ToString()
+            {
+                return Start + ">" + End;
+            }
         }
 
-        private List<StartupEntry> entries = new List<StartupEntry>();
         private readonly DateTime startTime;
-        private string todaysRecordPath;
+        private static readonly string nakimeAppDataDir = "C:\\Users\\Default\\AppData\\Local\\Nakime";
+        private static readonly string liveFile = nakimeAppDataDir + "\\.live-session";
 
         public StartupWatcher()
         {
@@ -38,77 +35,58 @@ namespace NakimeWindowsService
             startTime = DateTime.Now;
         }
 
+        private void MakeSureStorageExists()
+        {
+            // Creating Nakime's Data Folder if it doesn't exist
+            if (!Directory.Exists(nakimeAppDataDir))
+            {
+                Directory.CreateDirectory(nakimeAppDataDir);
+            }
+        }
+
         protected override void OnStart(string[] args)
         {
-            // Get file name from startup date
-            string todaysFileStamp = DateToFileStamp(startTime);
-            // Writing records to an open directory
-            string username = "Default";
-
-            // check if AppData\Local\Nakime directory exists
-            string parentDirPath = "C:\\Users\\" + username + "\\AppData\\Local\\Nakime";
-            if (!Directory.Exists(parentDirPath))
-            {
-                // if parent folder doesn't exist
-                // then, we create one.
-                Directory.CreateDirectory(parentDirPath);
-            }
-
-            // The path to Today's record file
-            todaysRecordPath = parentDirPath + "\\" + todaysFileStamp + ".json";
-            if (File.Exists(todaysRecordPath))
-            {
-                // If record already exists,
-                // then, we fetch the existing records as the [OnStop] function will overrite the file,
-                // which will cause data loss.
-                var data = File.ReadAllText(todaysRecordPath);
-                entries = JsonSerializer.Deserialize<List<StartupEntry>>(data);
-            }
-            // Get up time in format "hh:mm:ss" (startup time)
-            var upTime = DateToStartUpEntry(startTime);
-            // Set down time to empty
-            var downTime = "";
-            // Let's now save the new record by appending it to the previous set of records for Today
-            // [StartupEntry] contains field types as string, so as to omit the need to create a data
-            // adapter for DateTime serialization and deserialization.
-            entries.Add(new StartupEntry()
-            {
-                StartTime = upTime,
-                EndTime = downTime,
-            });
-            // Whether Today's record exists or not,
-            // We are going to create one.
-            FileStream stream = File.Create(todaysRecordPath);
-            JsonSerializer.Serialize(stream, entries);
-            // When done, first we flush the new data
+            // Creating nakime's storage point
+            MakeSureStorageExists();
+            // Write the startup time to a file ".live-session",
+            // so that, Nakime's UI can get it.
+            var stream = File.CreateText(liveFile);
+            stream.WriteLine(DateToFileStamp(startTime));
+            stream.WriteLine(DateToTimeEntry(startTime));
             stream.Flush();
-            // and lastly, close the file stream and terminate the service.
             stream.Close();
         }
 
         protected override void OnStop()
         {
-            // Remove previous partial entry
-            entries.Remove(entries.Last());
-            // Get up time in format "hh:mm:ss" (startup time)
-            var upTime = DateToStartUpEntry(startTime);
-            // Get down time in format "hh:mm:ss" (shutdown time)
-            var downTime = DateToStartUpEntry(DateTime.Now);
-            // Let's now save the new record by appending it to the previous set of records for Today
-            // [StartupEntry] contains field types as string, so as to omit the need to create a data
-            // adapter for DateTime serialization and deserialization.
-            entries.Add(new StartupEntry() {
-                StartTime = upTime,
-                EndTime = downTime,
-            });
-            // Whether Today's record exists or not,
-            // We are going to create one.
-            FileStream stream = File.Create(todaysRecordPath);
-            JsonSerializer.Serialize(stream, entries);
-            // When done, first we flush the new data
-            stream.Flush();
-            // and lastly, close the file stream and terminate the service.
-            stream.Close();
+            SaveSessionTimeline();
+        }
+
+        protected override bool OnPowerEvent(PowerBroadcastStatus powerStatus)
+        {
+            if (powerStatus == PowerBroadcastStatus.Suspend)
+            {
+                SaveSessionTimeline();
+            }
+            return base.OnPowerEvent(powerStatus);
+        }
+
+        private void SaveSessionTimeline()
+        {
+            // current session's timeline
+            var timeline = new Timeline
+            {
+                Start = DateToTimeEntry(startTime),
+                End = DateToTimeEntry(DateTime.Now)
+            }.ToString();
+            var sessionStartDateFile = nakimeAppDataDir + "\\" + DateToFileStamp(startTime) + ".json";
+            var previousSessions = "";
+            if (File.Exists(sessionStartDateFile))
+            {
+                previousSessions = File.ReadAllText(sessionStartDateFile) + "\n";
+            }
+            previousSessions += timeline;
+            File.WriteAllText(sessionStartDateFile, previousSessions)
         }
 
         // Converts [date] object into "dd/mm/yyyy" format
@@ -118,9 +96,9 @@ namespace NakimeWindowsService
         }
 
         // Converts [date] object into "hh:mm:ss" format
-        private string DateToStartUpEntry(DateTime date)
+        private string DateToTimeEntry(DateTime date)
         {
-            return date.Hour + ":" + date.Minute+ ":" + date.Second;
+            return date.Hour + ":" + date.Minute + ":" + date.Second;
         }
     }
 }
