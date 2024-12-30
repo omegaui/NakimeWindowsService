@@ -14,15 +14,13 @@ namespace NakimeWindowsService
 {
     public partial class StartupWatcher : ServiceBase
     {
-        class Timeline
+        class Session
         {
-            public string Start { get; set; }
-            public string End { get; set; }
-
-            public override string ToString()
-            {
-                return Start + ">" + End;
-            }
+            public int Id {get; set;}
+            public string SessionStartDay {get; set; }
+            public string SessionEndDay {get; set; }
+            public string SessionStartTime { get; set; }
+            public string SessionEndTime { get; set; }
         }
 
         private readonly DateTime startTime;
@@ -59,34 +57,42 @@ namespace NakimeWindowsService
 
         protected override void OnStop()
         {
-            SaveSessionTimeline();
+            SaveSession();
         }
 
         protected override bool OnPowerEvent(PowerBroadcastStatus powerStatus)
         {
             if (powerStatus == PowerBroadcastStatus.Suspend)
             {
-                SaveSessionTimeline();
+                SaveSession();
             }
             return base.OnPowerEvent(powerStatus);
         }
 
-        private void SaveSessionTimeline()
+        private void SaveSession()
         {
-            // current session's timeline
-            var timeline = new Timeline
+            // Capture session timeline
+            var endTime = DateTime.Now;
+            var session = new Session {
+                SessionStartDay = DateToFileStamp(startTime),
+                SessionEndDay = DateToFileStamp(endTime),
+                SessionStartTime = DateToTimeEntry(startTime),
+                SessionEndTime = DateToTimeEntry(startTime),
+            };
+            // Read Existing Sessions if any
+            var sessionFile = session.SessionEndDay + ".json";
+            var sessions = new List<Session>();
+            if (File.Exists(sessionFile)) 
             {
-                Start = DateToTimeEntry(startTime),
-                End = DateToTimeEntry(DateTime.Now)
-            }.ToString();
-            var sessionStartDateFile = nakimeAppDataDir + "\\" + DateToFileStamp(startTime) + ".json";
-            var previousSessions = "";
-            if (File.Exists(sessionStartDateFile))
-            {
-                previousSessions = File.ReadAllText(sessionStartDateFile) + "\n";
+                var data = File.ReadAllText(sessionFile);
+                sessions = JsonSerializer.Deserialize<List<Session>>(data);
             }
-            previousSessions += timeline;
-            File.WriteAllText(sessionStartDateFile, previousSessions);
+            session.Id = sessions.Count + 1;
+            sessions.Add(session);
+            // Save Session Data
+            FileStream stream = File.Create(sessionFile);
+            JsonSerializer.Serialize(stream, sessions);
+            stream.Flush();
         }
 
         // Converts [date] object into "dd/mm/yyyy" format
