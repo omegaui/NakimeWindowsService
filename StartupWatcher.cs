@@ -80,7 +80,7 @@ namespace NakimeWindowsService
                 SessionEndTime = DateToTimeEntry(startTime),
             };
             // Read Existing Sessions if any
-            var sessionFile = session.SessionEndDay + ".json";
+            var sessionFile = session.SessionStartDay + ".json";
             var sessions = new List<Session>();
             if (File.Exists(sessionFile)) 
             {
