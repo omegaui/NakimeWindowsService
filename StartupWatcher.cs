@@ -23,14 +23,13 @@ namespace NakimeWindowsService
             public string SessionEndTime { get; set; }
         }
 
-        private readonly DateTime startTime;
+        private DateTime startTime;
         private static readonly string nakimeAppDataDir = "C:\\Users\\Default\\AppData\\Local\\Nakime";
         private static readonly string liveFile = nakimeAppDataDir + "\\.live-session";
 
         public StartupWatcher()
         {
             InitializeComponent();
-            startTime = DateTime.Now;
         }
 
         private void MakeSureStorageExists()
@@ -44,6 +43,7 @@ namespace NakimeWindowsService
 
         protected override void OnStart(string[] args)
         {
+            startTime = DateTime.Now;
             // Creating nakime's storage point
             MakeSureStorageExists();
             // Write the startup time to a file ".live-session",
@@ -77,10 +77,10 @@ namespace NakimeWindowsService
                 SessionStartDay = DateToFileStamp(startTime),
                 SessionEndDay = DateToFileStamp(endTime),
                 SessionStartTime = DateToTimeEntry(startTime),
-                SessionEndTime = DateToTimeEntry(startTime),
+                SessionEndTime = DateToTimeEntry(endTime),
             };
             // Read Existing Sessions if any
-            var sessionFile = session.SessionStartDay + ".json";
+            var sessionFile = nakimeAppDataDir + "\\" + session.SessionStartDay + ".json";
             var sessions = new List<Session>();
             if (File.Exists(sessionFile)) 
             {
@@ -93,6 +93,7 @@ namespace NakimeWindowsService
             FileStream stream = File.Create(sessionFile);
             JsonSerializer.Serialize(stream, sessions);
             stream.Flush();
+            stream.Close();
         }
 
         // Converts [date] object into "dd/mm/yyyy" format
