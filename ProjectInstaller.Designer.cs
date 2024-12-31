@@ -39,6 +39,7 @@
             // 
             // serviceInstaller1
             // 
+            this.serviceInstaller1.DelayedAutoStart = true;
             this.serviceInstaller1.Description = "Keeps a record of system startups.";
             this.serviceInstaller1.DisplayName = "Nakime Windows Service";
             this.serviceInstaller1.ServiceName = "NakimeWindowsService";

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.ComTypes;
@@ -21,28 +22,72 @@ namespace NakimeWindowsService
             public string SessionEndDay {get; set; }
             public string SessionStartTime { get; set; }
             public string SessionEndTime { get; set; }
+
+            public override string ToString()
+            {
+                return SessionStartDay + "~" + SessionStartTime + "/" + SessionEndDay + "~" + SessionEndTime;
+            }
         }
 
         private DateTime startTime;
+        private EventLog _eventLog1;
         private static readonly string nakimeAppDataDir = "C:\\Users\\Default\\AppData\\Local\\Nakime";
         private static readonly string liveFile = nakimeAppDataDir + "\\.live-session";
 
         public StartupWatcher()
         {
             InitializeComponent();
+            if (!EventLog.SourceExists("Nakime"))
+            {
+                EventLog.CreateEventSource("Nakime", "Logs");
+            }
+            _eventLog1.Source = "Nakime";
+            _eventLog1.Log = "Logs";
+            _eventLog1.WriteEntry("Service initialized ...");
         }
 
         private void MakeSureStorageExists()
         {
+            _eventLog1.WriteEntry("Checking if Storage exists ...");
             // Creating Nakime's Data Folder if it doesn't exist
             if (!Directory.Exists(nakimeAppDataDir))
             {
+                _eventLog1.WriteEntry("Initializing storage ...");
                 Directory.CreateDirectory(nakimeAppDataDir);
             }
         }
 
         protected override void OnStart(string[] args)
         {
+            _eventLog1.WriteEntry("Service started ...");
+            WriteSessionStartupData();
+        }
+
+        protected override void OnContinue()
+        {
+            _eventLog1.WriteEntry("Service continued ...");
+            WriteSessionStartupData();
+        }
+
+        protected override void OnStop()
+        {
+            _eventLog1.WriteEntry("Service stopping...");
+            SaveSession();
+        }
+
+        protected override bool OnPowerEvent(PowerBroadcastStatus powerStatus)
+        {
+            if (powerStatus == PowerBroadcastStatus.Suspend)
+            {
+                _eventLog1.WriteEntry("System going to suspend state ...");
+                SaveSession();
+            }
+            return base.OnPowerEvent(powerStatus);
+        }
+
+        private void WriteSessionStartupData()
+        {
+            _eventLog1.WriteEntry("Saving live session timeline ...");
             startTime = DateTime.Now;
             // Creating nakime's storage point
             MakeSureStorageExists();
@@ -53,24 +98,12 @@ namespace NakimeWindowsService
             stream.WriteLine(DateToTimeEntry(startTime));
             stream.Flush();
             stream.Close();
-        }
-
-        protected override void OnStop()
-        {
-            SaveSession();
-        }
-
-        protected override bool OnPowerEvent(PowerBroadcastStatus powerStatus)
-        {
-            if (powerStatus == PowerBroadcastStatus.Suspend)
-            {
-                SaveSession();
-            }
-            return base.OnPowerEvent(powerStatus);
+            _eventLog1.WriteEntry("Saved live session timeline: " + DateToFileStamp(startTime) + "(" + DateToTimeEntry(startTime) + ")");
         }
 
         private void SaveSession()
         {
+            _eventLog1.WriteEntry("Attempting to save completed session history ...");
             // Capture session timeline
             var endTime = DateTime.Now;
             var session = new Session {
@@ -79,21 +112,25 @@ namespace NakimeWindowsService
                 SessionStartTime = DateToTimeEntry(startTime),
                 SessionEndTime = DateToTimeEntry(endTime),
             };
+            _eventLog1.WriteEntry("Session Timeline: " + session.ToString());
             // Read Existing Sessions if any
             var sessionFile = nakimeAppDataDir + "\\" + session.SessionStartDay + ".json";
             var sessions = new List<Session>();
-            if (File.Exists(sessionFile)) 
+            if (File.Exists(sessionFile))
             {
+                _eventLog1.WriteEntry("Loading previous sessions ...");
                 var data = File.ReadAllText(sessionFile);
                 sessions = JsonSerializer.Deserialize<List<Session>>(data);
             }
             session.Id = sessions.Count + 1;
             sessions.Add(session);
+            _eventLog1.WriteEntry("Saving session: " + session.Id);
             // Save Session Data
             FileStream stream = File.Create(sessionFile);
             JsonSerializer.Serialize(stream, sessions);
             stream.Flush();
             stream.Close();
+            _eventLog1.WriteEntry("Session timeline saved.");
         }
 
         // Converts [date] object into "dd/mm/yyyy" format
