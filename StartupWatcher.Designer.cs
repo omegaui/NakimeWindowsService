@@ -28,8 +28,14 @@
         /// </summary>
         private void InitializeComponent()
         {
-            components = new System.ComponentModel.Container();
-            this.ServiceName = "Service1";
+            // 
+            // StartupWatcher
+            // 
+            this.CanHandlePowerEvent = true;
+            this.CanPauseAndContinue = true;
+            this.CanShutdown = true;
+            this.ServiceName = "NakimeWindowsService";
+
         }
 
         #endregion

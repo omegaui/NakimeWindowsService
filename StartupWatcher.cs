@@ -31,12 +31,13 @@ namespace NakimeWindowsService
 
         private DateTime startTime;
         private EventLog _eventLog1;
-        private static readonly string nakimeAppDataDir = "C:\\Users\\Default\\AppData\\Local\\Nakime";
+        private static readonly string nakimeAppDataDir = "C:\\ProgramData\\Nakime";
         private static readonly string liveFile = nakimeAppDataDir + "\\.live-session";
 
         public StartupWatcher()
         {
             InitializeComponent();
+            _eventLog1 = new EventLog();
             if (!EventLog.SourceExists("Nakime"))
             {
                 EventLog.CreateEventSource("Nakime", "Logs");
@@ -75,14 +76,40 @@ namespace NakimeWindowsService
             SaveSession();
         }
 
+        protected override void OnPause()
+        {
+            _eventLog1.WriteEntry("Service pausing...");
+            SaveSession();
+        }
+
+        protected override void OnShutdown()
+        {
+            _eventLog1.WriteEntry("Service shutting down ...");
+            SaveSession();
+        }
+
         protected override bool OnPowerEvent(PowerBroadcastStatus powerStatus)
         {
             if (powerStatus == PowerBroadcastStatus.Suspend)
             {
                 _eventLog1.WriteEntry("System going to suspend state ...");
                 SaveSession();
+            } 
+            else if (powerStatus == PowerBroadcastStatus.ResumeSuspend)
+            {
+                _eventLog1.WriteEntry("System resuming from suspend state ...");
+                WriteSessionStartupData();
             }
             return base.OnPowerEvent(powerStatus);
+        }
+
+        protected override void OnSessionChange(SessionChangeDescription changeDescription)
+        {
+            if(changeDescription.Reason == SessionChangeReason.SessionLogon)
+            {
+                _eventLog1.WriteEntry("User logged in ...");
+                WriteSessionStartupData();
+            }
         }
 
         private void WriteSessionStartupData()
