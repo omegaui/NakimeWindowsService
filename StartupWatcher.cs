@@ -2,15 +2,22 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices.ComTypes;
 using System.ServiceProcess;
 using System.Text.Json;
 
-/// Scenarios to Handle:
-/// 1. System is turned on and off on the same day.
-/// 2. System is turned on and off on different days.
-/// 3. System is turned on and is alive yet.
+/// <summary>
+/// Nakime Windows Service
+/// This service is responsible for tracking system's uptime timeline.
+/// It overrites the session start time to a file ".live-session" in the Nakime's data folder 
+/// on receiving these events: service start, service continue and system resume suspend.
+/// It also saves the session timeline to a file named as "dd-mm-yyyy.json" in the Nakime's data folder
+/// on receiving these events: system suspend, system shutdown, service pause and service stop.
+/// The session timeline is saved in the C:\ProgramData\Nakime folder in the json format.
+/// 
+/// The service covers the code for both Laptop and Desktop Device's uptime tracking.
+/// For Laptops: Windows 11 (as of today: 1/1/2025) usually enters into suspend state when shutdown is requested.
+/// For Desktops: Windows 11 (as of today: 1/1/2025) usually enters into actual shutdown state when shutdown is requested.
+/// </summary>
 namespace NakimeWindowsService
 {
     public partial class StartupWatcher : ServiceBase
@@ -58,36 +65,62 @@ namespace NakimeWindowsService
             }
         }
 
+        /// <summary>
+        ///  OnStart: This method is called when the service is started or when system is restarted.
+        /// </summary>
+        /// <param name="args"></param>
         protected override void OnStart(string[] args)
         {
             _eventLog1.WriteEntry("Service started ...");
             WriteSessionStartupData();
         }
 
+        /// <summary>
+        /// OnContinue: This method is called when the service is continued after being paused.
+        /// Nakime's service doesn't pause by itself, but this method and more in this file are implemented for the sake of completeness.
+        /// </summary>
         protected override void OnContinue()
         {
             _eventLog1.WriteEntry("Service continued ...");
             WriteSessionStartupData();
         }
 
+
+        /// <summary>
+        /// OnStop: This method is called when the service is stopped or when system is shutting down.
+        /// Nakime's service doesn't stop by itself.
+        /// </summary>
         protected override void OnStop()
         {
             _eventLog1.WriteEntry("Service stopping...");
             SaveSession();
         }
 
+        /// <summary>
+        /// OnPause: This method is called when the service is paused.
+        /// Nakime's service doesn't stop by itself.
+        /// </summary>
         protected override void OnPause()
         {
             _eventLog1.WriteEntry("Service pausing...");
             SaveSession();
         }
 
+        /// <summary>
+        /// OnShutdown: This method is called when the system is shutting down, at this time,
+        /// the service saves the uptime session timeline.
+        /// </summary>
         protected override void OnShutdown()
         {
             _eventLog1.WriteEntry("Service shutting down ...");
             SaveSession();
         }
 
+        /// <summary>
+        /// OnPowerEvent: This method is called when the system is going to suspend or resuming from suspend state.
+        /// Nakime's service saves the uptime session timeline on system suspend and refreshes the session timeline on system resume,
+        /// this is usually effective for Laptops.
+        /// </summary>
         protected override bool OnPowerEvent(PowerBroadcastStatus powerStatus)
         {
             if (powerStatus == PowerBroadcastStatus.Suspend)
@@ -102,16 +135,10 @@ namespace NakimeWindowsService
             }
             return base.OnPowerEvent(powerStatus);
         }
-
-        protected override void OnSessionChange(SessionChangeDescription changeDescription)
-        {
-            if(changeDescription.Reason == SessionChangeReason.SessionLogon)
-            {
-                _eventLog1.WriteEntry("User logged in ...");
-                WriteSessionStartupData();
-            }
-        }
-
+        
+        /// <summary>
+        /// WriteSessionStartupData: This method writes the session startup time to a file named ".live-session"
+        /// </summary>
         private void WriteSessionStartupData()
         {
             _eventLog1.WriteEntry("Saving live session timeline ...");
@@ -128,6 +155,9 @@ namespace NakimeWindowsService
             _eventLog1.WriteEntry("Saved live session timeline: " + DateToFileStamp(startTime) + "(" + DateToTimeEntry(startTime) + ")");
         }
 
+        /// <summary>
+        /// SaveSession: This method saves the session timeline to a file named as "dd-mm-yyyy.json".
+        /// </summary>
         private void SaveSession()
         {
             _eventLog1.WriteEntry("Attempting to save completed session history ...");
@@ -160,13 +190,21 @@ namespace NakimeWindowsService
             _eventLog1.WriteEntry("Session timeline saved.");
         }
 
-        // Converts [date] object into "dd/mm/yyyy" format
+        /// <summary>
+        /// Converts [date] object into "dd/mm/yyyy" format
+        /// </summary>
+        /// <param name="date"></param>
+        /// <returns></returns>
         private string DateToFileStamp(DateTime date)
         {
             return date.Day + "-" + date.Month + "-" + date.Year;
         }
 
-        // Converts [date] object into "hh:mm:ss" format
+        /// <summary>
+        /// Converts [date] object into "hh:mm:ss" format
+        /// </summary>
+        /// <param name="date"></param>
+        /// <returns></returns>
         private string DateToTimeEntry(DateTime date)
         {
             return date.Hour + ":" + date.Minute + ":" + date.Second;
