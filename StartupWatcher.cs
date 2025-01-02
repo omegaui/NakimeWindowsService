@@ -17,6 +17,7 @@ using System.Text.Json;
 /// The service covers the code for both Laptop and Desktop Device's uptime tracking.
 /// For Laptops: Windows 11 (as of today: 1/1/2025) usually enters into suspend state when shutdown is requested.
 /// For Desktops: Windows 11 (as of today: 1/1/2025) usually enters into actual shutdown state when shutdown is requested.
+/// <author> @omegaui </author>
 /// </summary>
 namespace NakimeWindowsService
 {
