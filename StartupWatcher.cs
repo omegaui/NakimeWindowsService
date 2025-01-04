@@ -74,6 +74,7 @@ namespace NakimeWindowsService
         {
             _eventLog1.WriteEntry("Service started ...");
             WriteSessionStartupData();
+            base.OnStart(args);
         }
 
         /// <summary>
@@ -84,6 +85,7 @@ namespace NakimeWindowsService
         {
             _eventLog1.WriteEntry("Service continued ...");
             WriteSessionStartupData();
+            base.OnContinue();
         }
 
 
@@ -93,8 +95,10 @@ namespace NakimeWindowsService
         /// </summary>
         protected override void OnStop()
         {
+            RequestAdditionalTime(1000 * 60 * 2);
             _eventLog1.WriteEntry("Service stopping...");
             SaveSession();
+            base.OnStop();
         }
 
         /// <summary>
@@ -105,6 +109,7 @@ namespace NakimeWindowsService
         {
             _eventLog1.WriteEntry("Service pausing...");
             SaveSession();
+            base.OnPause();
         }
 
         /// <summary>
@@ -113,8 +118,10 @@ namespace NakimeWindowsService
         /// </summary>
         protected override void OnShutdown()
         {
+            RequestAdditionalTime(1000 * 60 * 2);
             _eventLog1.WriteEntry("Service shutting down ...");
             SaveSession();
+            base.OnShutdown();
         }
 
         /// <summary>
