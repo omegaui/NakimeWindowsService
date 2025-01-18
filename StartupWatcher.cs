@@ -2,8 +2,10 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.ServiceProcess;
 using System.Text.Json;
+using System.Timers;
 
 /// <summary>
 /// Nakime Windows Service
@@ -26,6 +28,7 @@ namespace NakimeWindowsService
         class Session
         {
             public int Id {get; set;}
+            public string Tag { get; set; }
             public string SessionStartDay {get; set; }
             public string SessionEndDay {get; set; }
             public string SessionStartTime { get; set; }
@@ -33,14 +36,16 @@ namespace NakimeWindowsService
 
             public override string ToString()
             {
-                return SessionStartDay + "~" + SessionStartTime + "/" + SessionEndDay + "~" + SessionEndTime;
+                return SessionStartDay + "~" + SessionStartTime + "/" + SessionEndDay + "~" + SessionEndTime + " (tag: " + Tag + ")";
             }
         }
 
-        private DateTime startTime;
+        private DateTime sessionStartedAt;
         private EventLog _eventLog1;
         private static readonly string nakimeAppDataDir = "C:\\ProgramData\\Nakime";
         private static readonly string liveFile = nakimeAppDataDir + "\\.live-session";
+        private static readonly string pollFile = nakimeAppDataDir + "\\.poll-session";
+        private static Timer pollingTimer;
 
         public StartupWatcher()
         {
@@ -73,7 +78,7 @@ namespace NakimeWindowsService
         protected override void OnStart(string[] args)
         {
             _eventLog1.WriteEntry("Service started ...");
-            WriteSessionStartupData();
+            WriteSessionStartupData(tryToRetainPreviousSession: true);
             base.OnStart(args);
         }
 
@@ -97,6 +102,10 @@ namespace NakimeWindowsService
         {
             RequestAdditionalTime(1000 * 60 * 2);
             _eventLog1.WriteEntry("Service stopping...");
+            if (pollingTimer != null)
+            {
+                pollingTimer.Close();
+            }
             SaveSession();
             base.OnStop();
         }
@@ -108,6 +117,10 @@ namespace NakimeWindowsService
         protected override void OnPause()
         {
             _eventLog1.WriteEntry("Service pausing...");
+            if (pollingTimer != null)
+            {
+                pollingTimer.Close();
+            }
             SaveSession();
             base.OnPause();
         }
@@ -115,11 +128,15 @@ namespace NakimeWindowsService
         /// <summary>
         /// OnShutdown: This method is called when the system is shutting down, at this time,
         /// the service saves the uptime session timeline.
+        /// Executes normally when shutdown is requested by the user, but not when restart is requested.
         /// </summary>
         protected override void OnShutdown()
         {
-            RequestAdditionalTime(1000 * 60 * 2);
             _eventLog1.WriteEntry("Service shutting down ...");
+            if (pollingTimer != null)
+            {
+                pollingTimer.Close();
+            }
             SaveSession();
             base.OnShutdown();
         }
@@ -134,6 +151,10 @@ namespace NakimeWindowsService
             if (powerStatus == PowerBroadcastStatus.Suspend)
             {
                 _eventLog1.WriteEntry("System going to suspend state ...");
+                if (pollingTimer != null)
+                {
+                    pollingTimer.Close();
+                }
                 SaveSession();
             } 
             else if (powerStatus == PowerBroadcastStatus.ResumeSuspend)
@@ -147,36 +168,111 @@ namespace NakimeWindowsService
         /// <summary>
         /// WriteSessionStartupData: This method writes the session startup time to a file named ".live-session"
         /// </summary>
-        private void WriteSessionStartupData()
+        private void WriteSessionStartupData(bool tryToRetainPreviousSession = false)
         {
             _eventLog1.WriteEntry("Saving live session timeline ...");
-            startTime = DateTime.Now;
+            sessionStartedAt = DateTime.Now;
             // Creating nakime's storage point
             MakeSureStorageExists();
-            // Write the startup time to a file ".live-session",
+            // check if triggered by OnStart
+            // this session may be a restart of the previous session
+            // as a result, previous session was't saved successfully
+            // because of time limit inforcement of Windows OS
+            if (tryToRetainPreviousSession)
+            {
+                _eventLog1.WriteEntry("System might be opening after restart ...");
+                // check if there's a live polling file for previous session
+                if (File.Exists(pollFile))
+                {
+                    _eventLog1.WriteEntry("Polling file exists will try to recover the last session ...");
+                    // try to read previous session stats
+                    var content = File.ReadAllLines(pollFile);
+                    // validate previous session stats
+                    if (content.Length == 2 && content[0].Contains("start$=") && content[1].Contains("end$="))
+                    {
+                        _eventLog1.WriteEntry("Polling data validation successful.\nPolling Data: " + content[0] + "\n" + content[1]);
+                        // parse start and end timelines
+                        var start = content[0];
+                        var startDay = start.Substring(start.IndexOf("=") + 1, start.IndexOf('/') - start.IndexOf("=") - 1);
+                        var startTime = start.Substring(start.IndexOf('/') + 1);
+                        var end = content[1];
+                        var endDay = end.Substring(end.IndexOf("=") + 1, end.IndexOf('/') - end.IndexOf("=") - 1);
+                        var endTime = end.Substring(end.IndexOf('/') + 1);
+                        // next save this recovered session
+                        var session = new Session
+                        {
+                            SessionStartDay = startDay,
+                            SessionStartTime = startTime,
+                            SessionEndDay = endDay,
+                            SessionEndTime = endTime,
+                            Tag = "session-recovered" // add `session-recovered` tag for Nakime's UI to denote fluctuation of this data
+                        };
+                        _eventLog1.WriteEntry("Attempting to recover lost session: " + session.ToString());
+                        SaveSession(session);
+                    }
+                    else
+                    {
+                        var data = "";
+                        foreach(string dx in content)
+                        {
+                            data += dx + "\n";
+                        }
+                        _eventLog1.WriteEntry("Polling data is incorrect!! Aborting Session Recovery.\nPolling Data: " + data);
+                    }
+                }
+            }
+            // now, let's start a polling timer
+            // because on Windows restart, session history is not saved because of time limit issue.
+            pollingTimer = new Timer
+            {
+                Interval = 60000
+            };
+            pollingTimer.Elapsed += new ElapsedEventHandler(OnTimer);
+            pollingTimer.Start();
+            // Next, write the startup time to a file ".live-session",
             // so that, Nakime's UI can get it.
             var stream = File.CreateText(liveFile);
-            stream.WriteLine(DateToFileStamp(startTime));
-            stream.WriteLine(DateToTimeEntry(startTime));
+            stream.WriteLine(DateToFileStamp(sessionStartedAt));
+            stream.WriteLine(DateToTimeEntry(sessionStartedAt));
             stream.Flush();
             stream.Close();
-            _eventLog1.WriteEntry("Saved live session timeline: " + DateToFileStamp(startTime) + "(" + DateToTimeEntry(startTime) + ")");
+            _eventLog1.WriteEntry("Saved live session start time: " + DateToFileStamp(sessionStartedAt) + "(" + DateToTimeEntry(sessionStartedAt) + ")");
+        }
+
+        private void OnTimer(object sender, ElapsedEventArgs args)
+        {
+            // Write session stats to polling file every minute
+            var sessionEndedAt = DateTime.Now;
+            var startDay = DateToFileStamp(sessionStartedAt);
+            var startTime = DateToTimeEntry(sessionStartedAt);
+            var endDay = DateToFileStamp(sessionEndedAt);
+            var endTime = DateToTimeEntry(sessionEndedAt);
+
+            var start = "start$=" + startDay + "/" + startTime;
+            var end = "end$=" + endDay + "/" + endTime;
+
+            var stream = File.CreateText(pollFile);
+            stream.WriteLine(start);
+            stream.Write(end);
+            stream.Flush();
+            stream.Close();
         }
 
         /// <summary>
         /// SaveSession: This method saves the session timeline to a file named as "dd-mm-yyyy.json".
         /// </summary>
-        private void SaveSession()
+        private void SaveSession(Session previous = null)
         {
             _eventLog1.WriteEntry("Attempting to save completed session history ...");
             // Capture session timeline
             var endTime = DateTime.Now;
-            var session = new Session {
-                SessionStartDay = DateToFileStamp(startTime),
+            var session = previous == null ? new Session {
+                SessionStartDay = DateToFileStamp(sessionStartedAt),
                 SessionEndDay = DateToFileStamp(endTime),
-                SessionStartTime = DateToTimeEntry(startTime),
+                SessionStartTime = DateToTimeEntry(sessionStartedAt),
                 SessionEndTime = DateToTimeEntry(endTime),
-            };
+                Tag = "" // no tag for non-restarted session
+            } : previous;
             _eventLog1.WriteEntry("Session Timeline: " + session.ToString());
             // Read Existing Sessions if any
             var sessionFile = nakimeAppDataDir + "\\" + session.SessionStartDay + ".json";
@@ -189,13 +285,27 @@ namespace NakimeWindowsService
             }
             session.Id = sessions.Count + 1;
             sessions.Add(session);
-            _eventLog1.WriteEntry("Saving session: " + session.Id);
+            _eventLog1.WriteEntry("Saving session: " + session.Id + " in " + sessionFile);
             // Save Session Data
-            FileStream stream = File.Create(sessionFile);
-            JsonSerializer.Serialize(stream, sessions);
-            stream.Flush();
-            stream.Close();
-            _eventLog1.WriteEntry("Session timeline saved.");
+            try
+            {
+                FileStream stream = File.Create(sessionFile);
+                JsonSerializer.Serialize(stream, sessions);
+                stream.Flush();
+                stream.Close();
+                _eventLog1.WriteEntry("Session timeline saved.");
+            } 
+            catch (Exception e)
+            {
+                _eventLog1.WriteEntry("Failed to save Session timeline: " + e.ToString());
+            }
+            // save session was a success
+            // there's no need to keep the polling file
+            if (File.Exists(pollFile))
+            {
+                File.Delete(pollFile);
+                _eventLog1.WriteEntry("Deleted unnecessary polling data ...");
+            }
         }
 
         /// <summary>
