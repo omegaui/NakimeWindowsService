@@ -217,7 +217,7 @@ namespace NakimeWindowsService
                         {
                             data += dx + "\n";
                         }
-                        _eventLog1.WriteEntry("Polling data is incorrect!! Aborting Session Recovery.\nPolling Data: " + data);
+                        _eventLog1.WriteEntry("Polling data is incorrect!! Aborting Session Recovery.\nPolling Data: " + data, EventLogEntryType.Error);
                     }
                 }
             }
@@ -297,7 +297,7 @@ namespace NakimeWindowsService
             } 
             catch (Exception e)
             {
-                _eventLog1.WriteEntry("Failed to save Session timeline: " + e.ToString());
+                _eventLog1.WriteEntry("Failed to save Session timeline: " + e.ToString(), EventLogEntryType.Error);
             }
             // save session was a success
             // there's no need to keep the polling file
