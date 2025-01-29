@@ -40,12 +40,21 @@ namespace NakimeWindowsService
             }
         }
 
+        class ErrorLog
+        {
+            public string Title { get; set; }
+            public string Message { get; set; }
+            public string Trace { get; set; }
+        }
+
         private DateTime sessionStartedAt;
         private EventLog _eventLog1;
         private static readonly string nakimeAppDataDir = "C:\\ProgramData\\Nakime";
         private static readonly string liveFile = nakimeAppDataDir + "\\.live-session";
         private static readonly string pollFile = nakimeAppDataDir + "\\.poll-session";
+        private static readonly string logDir = nakimeAppDataDir + "\\error-logs";
         private static Timer pollingTimer;
+        private static readonly string version = "v0.0.1+3";
 
         public StartupWatcher()
         {
@@ -58,6 +67,27 @@ namespace NakimeWindowsService
             _eventLog1.Source = "Nakime";
             _eventLog1.Log = "Logs";
             _eventLog1.WriteEntry("Service initialized ...");
+        }
+
+        private void CreateErrorLogEntry(String title, String message, String trace)
+        {
+            _eventLog1.WriteEntry("Checking if Error Log Storage exists ...");
+            // Creating Nakime's Data Folder if it doesn't exist
+            if (!Directory.Exists(logDir))
+            {
+                _eventLog1.WriteEntry("Initializing Error Log Storage ...");
+                Directory.CreateDirectory(logDir);
+            }
+            var now = DateTime.Now;
+            var logFileName =  DateToFileStamp(now) + "-" + DateToTimeEntry(now) + version + ".json";
+            FileStream stream = File.Create(logDir + "\\" + logFileName);
+            JsonSerializer.Serialize(stream, new ErrorLog() { 
+                Title = title,
+                Message = message,
+                Trace = trace
+            });
+            stream.Flush();
+            stream.Close();
         }
 
         private void MakeSureStorageExists()
@@ -297,6 +327,7 @@ namespace NakimeWindowsService
             } 
             catch (Exception e)
             {
+                CreateErrorLogEntry("Failed to save Session timeline", e.Message, e.StackTrace.ToString());
                 _eventLog1.WriteEntry("Failed to save Session timeline: " + e.ToString(), EventLogEntryType.Error);
             }
             // save session was a success
@@ -305,6 +336,13 @@ namespace NakimeWindowsService
             {
                 File.Delete(pollFile);
                 _eventLog1.WriteEntry("Deleted unnecessary polling data ...");
+            }
+
+            // Remove Live Session Data
+            if (File.Exists(liveFile))
+            {
+                File.Delete(liveFile);
+                _eventLog1.WriteEntry("Deleted live session data [session closing]...");
             }
         }
 
