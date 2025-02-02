@@ -10,7 +10,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("@omegaui")]
 [assembly: AssemblyProduct("NakimeWindowsService")]
-[assembly: AssemblyCopyright("Copyright © omegaui 2024. All Right Reserved.")]
+[assembly: AssemblyCopyright("Copyright © omegaui 2025. All Right Reserved.")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 
@@ -29,5 +29,5 @@ using System.Runtime.InteropServices;
 //      Build Number
 //      Revision
 //
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("0.0.0.1")]
+[assembly: AssemblyFileVersion("0.0.0.1")]
